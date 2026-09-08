@@ -1,0 +1,21 @@
+Bituo Dial 真机广播样本（采集于 2026-09-01，上海）
+================================================
+设备 BLE 地址：45:6A:75:3B:B4:C4（addr_type=1，随机静态地址，高 2bit=01）
+信号强度：-85 ~ -91 dBm（较弱）
+广播形态：legacy ADV，Flags(02 01 06) + Manufacturer(1b ff ...)，总长 31B
+厂商数据：26B，FF FF + ctrl + counter(LE,u32) + ct15 + tag4
+规律：ctrl 在 0x13/0x17/0x1b 间轮换（bit6-4 编码版本=1，bit3-2 相位索引 0/1/2，
+      bit1-0 产品类别=3）；counter 全局连续递增，约 200ms 一包。
+      ——与《BLE_Crypto_API_Documentation》§9.2/§9.3 完全吻合。
+
+【M5Dial(NimBLE passive) 采集，18:11】
+ctr=1769224 (0x001aff08): ffff1308ff1a00ad9c3b66f12307a0f4462e60921c4fc08eaf83
+ctr=1769242 (0x001aff1a): ffff131aff1a000ed4b5c7148e798ed7c8df9e37ce7ff2e4967c
+
+【PC(bleak, Windows active) 采集，18:0x，同一设备 counter 序列连续】
+ffff1b03f71a00698a929d07433e62a00cefafe79a16af92bd6c
+ffff1b3ff71a00deb173fd4087180cb3289df39911283481f27d
+ffff1756f71a00120b8d70f9fc7d710343a667405b8cef56dbf1
+
+说明：以上密文在拿到该设备 broadcast_key（16B）前不可读；
+拿到 key 后用：python tools/test_decrypt.py <26B hex> <key 32hex> 解密。

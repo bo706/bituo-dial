@@ -1,0 +1,26 @@
+# ESP-IDF
+build/
+managed_components/
+dependencies.lock
+sdkconfig.old
+*.bin
+*.elf
+*.map
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Serial / soak captures (may contain lab IPs)
+tools/captures/

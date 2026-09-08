@@ -1,0 +1,61 @@
+# =============================================================================
+# sdkconfig.defaults - Bituo Dial 预置 menuconfig 配置
+# 严格对应任务书 v1.1 第 8.1 节，提交到仓库后团队成员无需手动 menuconfig
+# 创建日期: 2026-09-01
+# =============================================================================
+
+# ── PSRAM ─────────────────────────────────────────────────────────────────
+# 【任务书 8.1 / 零售版 M5Dial 原值（8MB 八线 Octal PSRAM @80MHz，坑6）】
+#   CONFIG_SPIRAM=y
+#   CONFIG_SPIRAM_MODE_OCT=y
+#   CONFIG_SPIRAM_SPEED_80M=y
+# 【2026-09-01 按实物关闭】本机模块（MAC ac:a7:04:01:80:b4）两轮启动实测：
+#   ① Octal 模式：octal_psram: PSRAM ID read error: 0x00000000 -> abort 重启；
+#   ② Quad  模式：quad_psram : PSRAM ID read error: 0x00ffffff（总线全 1，
+#      即无器件应答）-> abort 重启。
+#   两种线序模式均读不到 ID，结论：该模块未贴 PSRAM。故关闭 SPIRAM；
+#   meter_store.c 已实现"优先 PSRAM、回退内部 RAM"，16 表槽不足 2KB，
+#   内部 RAM 可承载。若后续换回零售 M5Dial，把下面三行注释恢复即可。
+CONFIG_SPIRAM=n
+
+# ── 蓝牙主机：使用 NimBLE，关闭 Bluedroid，最大连接数 4 ──
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=4
+
+# ── 主任务栈 / 任务看门狗 ──
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# ── 自定义分区表 ──
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ── Flash 容量 ────────────────────────────────────────────────────────────
+# 【任务书 2.1/零售版 M5Dial 原值】16MB：
+#   CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y / CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+# 【2026-09-01 按实物修正】esptool chip_id 实测：Embedded Flash 8MB (XMC)，
+#   写 16MB 会出现 "Set --flash_size 16MB is larger than available 8MB" 警告。
+#   分区表末尾 0x410000(4.1MB) < 8MB，容量仍然够用，故按物理值锁 8MB。
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# ── 默认日志级别 INFO ──
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ── LVGL v8.3（components/lvgl，Kconfig 方式配置）────────────────────
+# RGB565 高低字节交换：ESP32 小端内存序 vs SPI MSB-first/GC9A01 高字节在前，
+# !!! 不开会红蓝通道错位、画面发暗（见 gc9a01.c fill_screen 注释）!!!
+CONFIG_LV_COLOR_16_SWAP=y
+# 圆屏三页 UI 用到的字号（14 默认已开，另开 16 正文、20 标题/大数值）
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+# 方向自检页大号编号（定值后可关，不影响三页 UI）
+CONFIG_LV_FONT_MONTSERRAT_28=y
+# UI 任务栈 8192（任务书 5.4）
+# FreeRTOS 节拍 1000Hz（1 tick=1ms）：任务书要求编码器 1~5ms 轮询；
+# !!! 坑点提醒：若用默认 100Hz(1tick=10ms)，pdMS_TO_TICKS(5)=0，vTaskDelay(0)
+#     退化为 yield，ui_task 会 100% 占满 Core1 饿死 IDLE1，10s 触发任务看门狗 !!!
+CONFIG_FREERTOS_HZ=1000
+

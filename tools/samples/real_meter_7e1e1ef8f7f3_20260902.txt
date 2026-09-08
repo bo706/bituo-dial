@@ -1,0 +1,30 @@
+Bituo Dial Phase1 真机广播解密样本（PC bleak 端）
+================================================
+采集时间：2026-09-02 19:30（UTC+8）
+设备：用户测试表（三孔 SDM01_3PN 形态，手机 App 完成配网）
+BLE 地址：7E:1E:1E:F8:F7:F3（随机静态地址，addr_type=1）
+broadcast_key（手机 App 读出）：<redacted-broadcast-key>
+SN：完整 12hex 未知，前 3 hex = 50c（短包鉴别器 0x50c 一致）
+协议：AES-128-CCM，nonce=0^8||BE32(counter)，AAD 空，tag=4
+结果：20 秒 22 帧全部 tag 认证通过，覆盖 phase 0/1/2，counter 连续递增
+环境干扰：另有 13 帧其它设备长包 tag 失败（非本表，正常）
+
+原始记录（去重后代表帧）：
+phase=1 ctrl=0x97 counter=1229 plain15=010000000000000000000000000000 rssi=-32
+phase=1 ctrl=0x97 counter=1232 plain15=010000000000000000000000000000 rssi=-34
+phase=1 ctrl=0x97 counter=1235 plain15=010000000000000000000000000000 rssi=-34
+phase=1 ctrl=0x97 counter=1241 plain15=010000000000000000000000000000 rssi=-34
+phase=0 ctrl=0x93 counter=1252 plain15=9d0800000000000000000000000000 rssi=-32
+phase=0 ctrl=0x93 counter=1264 plain15=9e0800000000000000000000000000 rssi=-35
+phase=1 ctrl=0x97 counter=1265 plain15=010000000000000000000000000000 rssi=-32
+phase=0 ctrl=0x93 counter=1270 plain15=9b0800000000000000000000000000 rssi=-33
+phase=2 ctrl=0x9b counter=1272 plain15=9d0800000000000000000000000000 rssi=-37
+phase=1 ctrl=0x97 counter=1274 plain15=010000000000000000000000000000 rssi=-34
+phase=0 ctrl=0x93 counter=1276 plain15=9c0800000000000000000000000000 rssi=-37
+
+初步观察（未经数据字典确认，仅记录，禁止据此硬编解析）：
+1. 三个相位各占 15B 明文，前两字节为小端 u16，其余 13 字节当前全 0；
+2. phase0/phase2 的 u16 在 0x089b~0x089e（2203~2206）间缓慢变化，
+   若 LSB=0.01V 则为 220.3~220.6V，与中国市电 220V 标称吻合（待字典确认）；
+3. phase1 恒为 0x0001，疑似未接 B 相时的状态字/零值，待字典确认；
+4. 字段布局以《BLE 广播数据字典 v2.x》为准，到位前 parse_plaintext() 保持 TODO。
