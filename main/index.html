@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang=zh-CN>
+<head>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Bituo Dial</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0f14;color:#e8eaed;font-family:sans-serif}
+header{padding:12px 16px;background:#111827;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+h1{font-size:18px;margin:0;color:#4fc3f7}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{width:auto;padding:8px 12px;border:0;border-radius:8px;background:#222a35;color:#e8eaed;cursor:pointer}
+.tabs button.on{background:#1f6feb;color:#e8eaed}
+.meta{padding:8px 16px;color:#9aa0a6;font-size:13px}
+.wrap{padding:0 16px 24px;max-width:960px}
+.page{display:none}
+.page.on{display:block}
+h3{margin:16px 0 8px;font-size:15px;color:#4fc3f7}
+input,button,select{width:100%;margin:.25em 0;padding:.5em;background:#151b23;color:#e8eaed;border:1px solid #2a3340;border-radius:8px}
+button{background:#1f6feb;border:0;cursor:pointer}
+button.sec{background:#222a35}
+button.danger{background:#8b2942}
+button.sm{width:auto;padding:4px 10px}
+label{font-size:.85em;color:#9aa0a6}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.card{background:#151b23;border-radius:12px;padding:14px}
+.st-on{color:#35d47a}.st-off{color:#6b7075}.err{color:#f2c14e}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td{padding:3px 0}.k{color:#9aa0a6}.v{text-align:right;font-variant-numeric:tabular-nums}
+ul{list-style:none;padding:0;margin:0}li{padding:8px 0;border-bottom:1px solid #222;cursor:pointer}
+pre{white-space:pre-wrap;background:#111827;padding:.6em;min-height:2.5em;font-size:12px}
+.hint{color:#9aa0a6;font-size:12px;margin:0 0 8px}
+.pill{color:#35d47a;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+<h1>Bituo Dial</h1>
+<div class=tabs>
+<button type=button id=t0 class=on onclick="tab(0)">状态数据</button>
+<button type=button id=t1 onclick="tab(1)">添加电表</button>
+<button type=button id=t2 onclick="tab(2)">配置</button>
+</div>
+<span class=pill id=httpst>HTTP on</span>
+</header>
+<div class=meta id=meta>loading...</div>
+<div class=wrap>
+<div class=err id=err></div>
+<div id=p0 class="page on">
+<h3>Dial</h3>
+<div class=card id=dialst></div>
+<h3>电表（最多 16）</h3>
+<div class=grid id=grid></div>
+</div>
+<div id=p1 class=page>
+<h3>扫描附近 SPM / SDM</h3>
+<p class=hint>点选一行填入 SN；短包可能没有完整 SN，可手填。名称请对应实际回路，例如厨房、空调支路。</p>
+<button type=button class=sec onclick="scanBle()">扫描附近电表</button>
+<ul id=ble></ul>
+<label>SN（12 hex）</label><input id=msn maxlength=12>
+<label>业务广播密钥（32 hex）</label><input id=mkey maxlength=32>
+<label>名称 / 回路</label><input id=mlab placeholder="厨房 / 空调支路">
+<button type=button onclick="addMeter()">添加电表</button>
+</div>
+<div id=p2 class=page>
+<h3>Wi-Fi（仅 2.4 GHz）</h3>
+<button type=button class=sec onclick="scanWifi()">扫描 Wi-Fi</button>
+<ul id=aps></ul>
+<label>SSID</label><input id=ssid>
+<label>密码</label><input id=wpass type=password>
+<button type=button onclick="saveWifi()">保存 Wi-Fi</button>
+<h3>MQTT / MQTTS</h3>
+<label>Host</label><input id=host>
+<div class=row>
+<div><label>Port</label><input id=port value=1883></div>
+<div><label>TLS</label>
+<select id=tls onchange="tlsCh()"><option value=0>off 1883</option><option value=1>mqtts</option></select></div>
+</div>
+<label>User</label><input id=user>
+<label>Pass</label><input id=mpass type=password>
+<label>Insecure（实验室自签，生产请关）</label>
+<select id=insec><option value=1>yes</option><option value=0>no</option></select>
+<button type=button onclick="saveMqtt()">保存 MQTT</button>
+<h3>已配电表（改名 / 移除）</h3>
+<ul id=cfg></ul>
+<h3>固件升级（局域网 OTA）</h3>
+<p class=hint>选择本机编译的 bituo-dial.bin（不要选 bootloader）。上传成功后设备重启；请保持供电约 30 秒，新固件确认存活后才取消回滚。失败或中途断电会留在旧版本。</p>
+<input id=otaf type=file accept=.bin>
+<button type=button onclick="doOta()">上传并升级</button>
+<h3>局域网网页</h3>
+<button type=button class=danger onclick="offHttp()">关闭 HTTP</button>
+<p><button type=button class=sec onclick="doRestart()">重启</button></p>
+</div>
+<pre id=out>ready</pre>
+</div>
+<script>
+function gid(id){return document.getElementById(id);}
+function n(x,d){if(x===undefined||x===null)return '--';var v=Number(x);return isFinite(v)?v.toFixed(d):'--';}
+function q(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function tab(i){
+  for(var k=0;k<3;k++){
+    gid('t'+k).className=k===i?'on':'';
+    gid('p'+k).className=k===i?'page on':'page';
+  }
+  if(i===2) tickCfg();
+}
+async function post(u,b){
+  gid('out').textContent='working...';
+  try{var r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+    gid('out').textContent=await r.text();}catch(e){gid('out').textContent='failed: '+e;}
+}
+async function jget(u){var r=await fetch(u);return r.json();}
+function tlsCh(){
+  var t=parseInt(gid('tls').value);
+  var p=parseInt(gid('port').value)||0;
+  if(t&& (p===1883||p===0)) gid('port').value=8883;
+  if(!t&& (p===8883||p===0)) gid('port').value=1883;
+}
+async function tick(){
+ try{
+  gid('meta').textContent='fetching...';
+  var i=await jget('/api/info'); var m=await jget('/api/meters');
+  var d=i.d||{}; var w=d.wifi||{}; var b=d.ble_scan||{}; var mq=d.mqtt||{};
+  var httpOn=d.http&&d.http.enabled;
+  gid('httpst').textContent=httpOn?'HTTP on':'HTTP off';
+  gid('meta').textContent=(d.dial_sn||'')+'  IP '+(d.ip||'--')+
+   '  Wi-Fi '+(w.connected?'on':'off')+' '+(w.rssi||'')+
+   '  MQTT '+(mq.connected?'on':'off')+
+   '  meters '+(b.online_count||0)+'/'+(b.meter_count||0)+'/16';
+  gid('err').textContent='';
+  gid('dialst').innerHTML='<table>'+
+    '<tr><td class=k>SN</td><td class=v>'+q(d.dial_sn)+'</td></tr>'+
+    '<tr><td class=k>FW</td><td class=v>'+q(d.fw_ver)+'</td></tr>'+
+    '<tr><td class=k>IP</td><td class=v>'+q(d.ip||'--')+'</td></tr>'+
+    '<tr><td class=k>Wi-Fi</td><td class=v>'+q(w.ssid)+' '+(w.connected?'on':'off')+' '+n(w.rssi,0)+' dBm</td></tr>'+
+    '<tr><td class=k>MQTT</td><td class=v>'+q(mq.host)+':'+(mq.port||'')+' TLS '+(mq.tls?1:0)+' '+(mq.connected?'on':'off')+'</td></tr>'+
+    '<tr><td class=k>uptime</td><td class=v>'+(d.uptime_s||0)+' s</td></tr>'+
+    '<tr><td class=k>OTA</td><td class=v>'+q((d.ota&&d.ota.running)||'')+' '+(d.ota&&d.ota.state||'')+'</td></tr>'+
+    '</table>';
+  if(!gid('host').dataset.filled){
+    gid('ssid').value=w.ssid||''; gid('host').value=mq.host||'';
+    gid('port').value=mq.port||1883; gid('tls').value=mq.tls?1:0;
+    gid('insec').value=(mq.insecure===0)?'0':'1';
+    gid('host').dataset.filled='1';
+  }
+  var arr=(m.d&&m.d.meters)||[];
+  if(!arr.length){gid('grid').innerHTML='<div class="card st-off">none</div>';}
+  else gid('grid').innerHTML=arr.map(function(t){
+   var on=!!t.valid;
+   var fe=(t.forward_energy_x||0)+(t.forward_energy_y||0)+(t.forward_energy_z||0);
+   return '<div class=card><h2 style="margin:0;font-size:16px">'+q(t.label||t.sn)+
+    ' <span class='+(on?'st-on':'st-off')+'>'+(on?'online':'offline')+'</span></h2>'+
+    '<div class=k>'+q(t.sn)+'</div><table>'+
+    '<tr><td class=k>X</td><td class=v>'+n(t.voltage_x,1)+' V  '+n(t.current_x,2)+' A</td></tr>'+
+    '<tr><td class=k>Y</td><td class=v>'+n(t.voltage_y,1)+' V  '+n(t.current_y,2)+' A</td></tr>'+
+    '<tr><td class=k>Z</td><td class=v>'+n(t.voltage_z,1)+' V  '+n(t.current_z,2)+' A</td></tr>'+
+    '<tr><td class=k>P</td><td class=v>'+n(t.total_active_power,3)+' kW</td></tr>'+
+    '<tr><td class=k>E+</td><td class=v>'+n(fe,2)+' kWh</td></tr>'+
+    '<tr><td class=k>RSSI</td><td class=v>'+n(t.rssi,0)+' dBm</td></tr>'+
+    '</table></div>';
+  }).join('');
+ }catch(e){gid('err').textContent='refresh failed'; gid('out').textContent=String(e);}
+}
+async function tickCfg(){
+ try{
+  var lst=await jget('/config/meters');
+  var cm=((lst.d&&lst.d.meters)||[]);
+  gid('cfg').innerHTML=cm.map(function(t){
+    var sn=q(t.sn);
+    return '<li>'+sn+'<input id="lab_'+sn+'" value="'+q(t.label||'')+'" placeholder="厨房 / 空调支路">'+
+      '<div class=row><button type=button class=sec data-sn="'+sn+'" onclick="ren(this.dataset.sn)">改名</button>'+
+      '<button type=button class=danger data-sn="'+sn+'" onclick="delMeter(this.dataset.sn)">移除</button></div></li>';
+  }).join('')||'<li class=st-off>none</li>';
+ }catch(e){gid('out').textContent=String(e);}
+}
+async function scanWifi(){
+ gid('aps').innerHTML='<li>scanning...</li>';
+ try{var j=await jget('/api/scan/wifi'); var a=(j.d&&j.d.aps)||[];
+  gid('aps').innerHTML=a.map(function(p){
+    return '<li data-ssid="'+q(p.ssid||'')+'" onclick="gid(\'ssid\').value=this.dataset.ssid">'+q(p.ssid)+'  '+p.rssi+' dBm</li>';
+  }).join('')||'<li>none</li>';
+  gid('out').textContent=JSON.stringify(j);
+ }catch(e){gid('aps').innerHTML='<li>scan failed</li>';}
+}
+async function scanBle(){
+ gid('ble').innerHTML='<li>scanning...</li>';
+ try{var j=await jget('/api/scan/ble'); var a=(j.d&&j.d.meters)||[];
+  gid('ble').innerHTML=a.map(function(p){
+    return '<li data-sn="'+q(p.sn||'')+'" data-name="'+q(p.name||'')+'" onclick="pickMeter(this.dataset.sn,this.dataset.name)">'+
+      q(p.name||'(no name)')+'  '+q(p.sn)+'  '+p.rssi+'  '+(p.configured?'added':'new')+'</li>';
+  }).join('')||'<li>none（等约 2s 再扫）</li>';
+  gid('out').textContent=JSON.stringify(j);
+ }catch(e){gid('ble').innerHTML='<li>scan failed</li>';}
+}
+function pickMeter(sn,name){gid('msn').value=sn||''; if(!gid('mlab').value) gid('mlab').value=name||'';}
+function addMeter(){post('/config/meters',{sn:gid('msn').value,bcast_key:gid('mkey').value,label:gid('mlab').value}); setTimeout(function(){tick();tickCfg();},800);}
+async function delMeter(sn){await fetch('/config/meters/'+sn,{method:'DELETE'}); tick(); tickCfg();}
+function ren(sn){var el=gid('lab_'+sn); post('/config',{cmd:'set_meter_label',sn:sn,label:el?el.value:''}); setTimeout(tickCfg,500);}
+function saveWifi(){post('/config/wifi',{ssid:gid('ssid').value,pass:gid('wpass').value});}
+function saveMqtt(){post('/config/mqtt',{host:gid('host').value,port:parseInt(gid('port').value)||0,user:gid('user').value,pass:gid('mpass').value,tls:parseInt(gid('tls').value),insecure:parseInt(gid('insec').value)});}
+function offHttp(){post('/config/http',{enable:0});}
+function doRestart(){post('/sys/restart',{});}
+function doOta(){
+  var f=gid('otaf').files[0];
+  if(!f){gid('out').textContent='choose bituo-dial.bin';return;}
+  var x=new XMLHttpRequest();
+  x.open('POST','/ota');
+  x.setRequestHeader('Content-Type','application/octet-stream');
+  x.upload.onprogress=function(e){
+    if(e.lengthComputable) gid('out').textContent='upload '+Math.round(e.loaded/e.total*100)+'% ('+e.loaded+'/'+e.total+')';
+  };
+  x.onload=function(){gid('out').textContent=x.responseText;};
+  x.onerror=function(){gid('out').textContent='ota upload failed';};
+  x.send(f);
+}
+tick();setInterval(tick,2000);
+</script>
+</body></html>

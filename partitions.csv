@@ -1,0 +1,9 @@
+# Name,   Type, SubType, Offset,   Size
+# 8MB Flash，双槽 OTA。nvs/phy 偏移与旧表相同，idf.py flash 不 erase 时可保留 Wi-Fi/电表配置。
+# ota 槽 64KB 对齐；每槽 3MB（当前固件约 1.5MB）。storage 仍划 SPIFFS，网页走 EMBED 未用。
+nvs,      data, nvs,     0x9000,   0x6000
+phy_init, data, phy,     0xf000,   0x1000
+otadata,  data, ota,     0x10000,  0x2000
+ota_0,    app,  ota_0,   0x20000,  0x300000
+ota_1,    app,  ota_1,   0x320000, 0x300000
+storage,  data, spiffs,  0x620000, 0x1E0000

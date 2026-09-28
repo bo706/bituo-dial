@@ -1,0 +1,5 @@
+bleak
+requests
+cryptography
+ecdsa
+paho-mqtt

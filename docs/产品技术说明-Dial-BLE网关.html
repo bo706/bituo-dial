@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Bituo Dial（BLE 电表网关）技术说明 · 精简</title>
+<style>
+  body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         max-width: 880px; margin: 24px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.55; }
+  h1 { font-size: 1.45rem; border-bottom: 2px solid #1a5f7a; padding-bottom: .3em; }
+  h2 { font-size: 1.15rem; color: #1a5f7a; margin-top: 1.6em; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; margin: .6em 0 1em; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #e8f2f6; }
+  .meta { color: #555; font-size: .9rem; margin-bottom: 1.2em; }
+  pre, code { font-family: Consolas, "Courier New", monospace; font-size: .88em; }
+  pre { background: #f4f6f8; padding: 10px 12px; overflow-x: auto; border-radius: 4px; }
+  .note { background: #fff8e6; border-left: 4px solid #e6a817; padding: 8px 12px; margin: 1em 0; }
+  ul { padding-left: 1.3em; }
+  @media print { body { margin: 0; max-width: none; } h2 { page-break-after: avoid; } }
+</style>
+</head>
+<body>
+<h1>Bituo Dial · BLE 电表网关</h1>
+<p class="meta">固件 <strong>1.1.4</strong> · 2026-09-24 · 完整版见同目录 Markdown<br>
+配套 HA：<a href="https://github.com/bo706/BituoPMD">bo706/BituoPMD</a> <strong>v1.1.3+</strong>（改 HA，不改本固件）</p>
+
+<h2>1. 产品定位</h2>
+<p>SPM / SDM 在 BLE 模式下只发加密广播。Dial 做成独立网关：南向解密最多 <strong>16</strong> 块表，圆屏显示，北向经 2.4 GHz Wi-Fi 用 <strong>MQTT</strong> 上报。电表不必改配 Wi-Fi。匹配只靠 <strong>12 位 SN + 32 hex 广播密钥</strong>，禁止按蓝牙 MAC（地址会变）。</p>
+<p>与 EW 电表（表自带 Wi-Fi、扁平 <code>GET /data</code>）不是同一条线。官方 BituoPMD 只认 EW；Dial 必须用 fork。</p>
+<pre>
+电表 BLE 广播 ──► Dial（解密 / 圆屏）──► MQTT Broker ──► Home Assistant
+                                      └─ 可选局域网网页（出厂关，共存时常打不开）
+</pre>
+
+<h2>2. 规格摘要</h2>
+<table>
+<tr><th>硬件</th><td>ESP32-S3 rev v0.2，<strong>8MB Flash / 无 PSRAM</strong>；GC9A01 圆屏；USB 口为下、橙色三角为上</td></tr>
+<tr><th>软件</th><td>ESP-IDF 5.2.3，LVGL 8.3，NimBLE 被动扫描 25% 占空比 + Wi-Fi 时隙</td></tr>
+<tr><th>容量</th><td>最多 16 表；概览最多 8 行滚动</td></tr>
+<tr><th>MQTT</th><td>约 10 s；<code>data</code> / <code>summary</code> / <code>mdata</code> Retain；keepalive 30 s</td></tr>
+<tr><th>在线</th><td>≤15 s 白；15～90 s 黄；&gt;90 s 灰 + 蜂鸣两声</td></tr>
+<tr><th>Wi-Fi</th><td>仅 2.4 GHz。保存凭据后 STA-only（GOT_IP 关 SoftAP）。无凭据或掉线约 60 s：热点 <code>BitUo-Dial-XXXXXX</code> / <code>12345678</code> / <code>192.168.4.1</code></td></tr>
+<tr><th>HTTP</th><td>出厂关。打开后 <code>http://&lt;IP&gt;/</code>。BLE 共存时电脑/HA 常访问失败，不能当日常主路径</td></tr>
+<tr><th>USB</th><td>烧录用。当网关运行请拔掉电脑 USB，否则会复位并干扰 Wi-Fi</td></tr>
+</table>
+<p>量测：U = 编码÷10（V），I = ÷100（A），P = 有符号÷1000（<strong>kW</strong>），E = ÷100（kWh）。广播<strong>无 PF</strong>，界面固定 <code>PF --</code>。开路时 I/P/E 为 0，与 App 一致。</p>
+
+<h2>3. 圆屏</h2>
+<p>短按：概览 → 详情 → 系统。系统页长按进 Setup（扫 Wi-Fi、加/删表、LAN web、热点）。保存 Wi-Fi 后应显示绿色 SSID 与 STA IP，不应停在黄色 SoftAP。</p>
+<p>MQTT <strong>绿</strong> = 已连 Broker；<strong>黄 (wait)</strong> = 未连上，可能闪一下后自动回来。</p>
+
+<h2>4. 怎么用</h2>
+<ol>
+<li>USB 供电 → 系统页确认 <code>v1.1.4</code>。</li>
+<li>Setup 连 <strong>2.4 GHz</strong> Wi-Fi，看绿色 IP。</li>
+<li>Add meter：SN + <code>bcast_key</code>。不要给这些表重新配电表 Wi-Fi。</li>
+<li>配 MQTT，Broker 与 HA 相同；系统页 MQTT 变绿。</li>
+<li>调试网页：打开 LAN web。HA 日常不依赖网页。</li>
+</ol>
+<p><strong>MQTT Topic</strong>（Client ID = Dial SN，如 <code>DIAL-0180B4</code>）</p>
+<table>
+<tr><th>Topic</th><th>说明</th></tr>
+<tr><td><code>bituo-dial/{DialSN}/meters/{MeterSN}/data</code></td><td>单表，功率 <strong>W</strong>，Retain</td></tr>
+<tr><td><code>…/summary</code></td><td>在线表数与功率，Retain</td></tr>
+<tr><td><code>…/mdata</code></td><td>名单与显示名，Retain</td></tr>
+<tr><td><code>…/cmd</code> → <code>…/cdata</code></td><td>远程命令 / 应答</td></tr>
+</table>
+<p><strong>Home Assistant</strong>：HACS 自定义仓库 <code>bo706/BituoPMD</code>，装 <strong>v1.1.3+</strong>（选带 v 的版本号，不要选长串 commit）→ 重启 HA。HA 须已接同一 MQTT。首次可用 IP 探测一次 <code>/data</code>（需 LAN web）。之后走 MQTT。Dial 增删表后重载该集成。不要对 Dial 条目用定位灯 / 恢复出厂 / URL-OTA。</p>
+<p><strong>OTA</strong>：网页上传 <code>bituo-dial.bin</code>。USB 只写 app，<strong>不要 erase_flash</strong>。</p>
+
+<h2>5. 接口与单位</h2>
+<p>GATT / HTTP / MQTT 共用命令信封 <code>{"ok","msg","event","d"}</code>。常用：<code>get_info</code>、<code>add_meter</code>、<code>list_meters</code>、<code>set_mqtt</code>、<code>setwifi</code>。</p>
+<table>
+<tr><th>通道</th><th>功率</th></tr>
+<tr><td>圆屏 / <code>GET /api/meters</code></td><td>kW</td></tr>
+<tr><td>MQTT <code>data</code>、<code>GET /data</code></td><td>W（内部 ×1000）</td></tr>
+<tr><td>HA BituoPMD 1.1.3+</td><td>W（不再 ×1000）</td></tr>
+</table>
+
+<h2>6. 明确不做 / 限制</h2>
+<ul>
+<li>无设备 HTTPS、无 URL-OTA、无继电器 / 清零 / 恢复出厂。</li>
+<li>不从广播编造 PF；不按 MAC 认表。</li>
+<li>不用官方 PMD 加 Dial。</li>
+<li>5 GHz 连不上；满 16 表堆较小；插 USB-JTAG 会打断网关。</li>
+</ul>
+<div class="note">
+<strong>验收</strong>：圆屏有数 → MQTT 绿 → Broker 上 <code>bituo-dial/{DialSN}/meters/+/data</code> 约 10 s 更新 → HA 电压/功率变化。<br>
+不要只凭浏览器打不开 Dial 网页判失败。
+</div>
+<p style="color:#888;font-size:.85rem;">完整规格、命令表、安全策略见 <code>docs/产品技术说明-Dial-BLE网关.md</code>。</p>
+</body>
+</html>

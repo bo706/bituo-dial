@@ -1,0 +1,32 @@
+# ESP-IDF
+build/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.old
+*.bin
+*.elf
+*.map
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Intern / secrets — never publish
+tools/captures/
+tools/samples/
+docs/HANDOFF*
+docs/phase*
+docs/pending_checklist.md
+docs/plan_*
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
