@@ -5,7 +5,7 @@
 | 依据 | [产品技术说明-Dial-BLE网关.md](产品技术说明-Dial-BLE网关.md)（固件 1.1.4） |
 | 被测对象 | Dial 固件 **1.1.4**；HA 配套 [bo706/BituoPMD](https://github.com/bo706/BituoPMD) **v1.1.4**（至少 v1.1.3+） |
 | 文档性质 | 初版功能 / 异常 / 边界 / 安全 / 稳定性测试用例 |
-| 日期 | 2026-09-28 |
+| 日期 | 2026-10-08 |
 
 电脑须与 Dial、MQTT Broker、HA 同一 **2.4 GHz** 局域网。HTTP 相关用例用 `curl.exe`（不要用 PowerShell 的 `curl` 别名）。密钥、Wi-Fi/MQTT 密码从内部清单取，**不写在本表**。样机 SN 形如 `DIAL-xxxxxx`；当前现场为最多 16 块 BLE 表（SDM01），不要按旧的三块 SPM 来数。
 
@@ -55,7 +55,7 @@
 | TC-METER-01 | 功能 | 解密后圆屏显示 | 1. 概览/详情查看已加表<br>2. 与手机 App 同表对电压<br>3. 有负载时再对电流、功率 | 电压约 220V，相对 App 误差约 &lt;1%；三相表三相电压合理（不是只有一相长期为 0） | P0 | |
 | TC-METER-04 | 功能 | 改回路名 | 1. 网页或 `set_meter_label` 改某表 label<br>2. 看圆屏概览与 MQTT `mdata` | 显示新名称；SN 不变；该表仍在线 | P1 | |
 | TC-METER-06 | 功能 | 开路读数 | 1. 表二次侧空载<br>2. 看详情 I/P/E 与电压 | I/P/E 为 0，电压仍约 220V；与 App「电流 0」一致 | P0 | |
-| TC-MQTT-01 | 功能 | 周期遥测 | 1. 系统页 MQTT 为绿（拔掉电脑 USB）<br>2. 订阅 `bituo-dial/{DialSN}/#`<br>3. 等 20～30s | 出现 `meters/{MeterSN}/data`、`summary`、`mdata`；间隔大约 10s；功率字段为 **W** | P0 | |
+| TC-MQTT-01 | 功能 | 周期遥测 | 1. 系统页 MQTT 为绿（拔掉电脑 USB）<br>2. 订阅 `bituo-dial/{DialSN}/#`<br>3. 等 20～30s<br>4. **满 16 槽时**：记下 16 个 SN，再看 30 s | 出现 `meters/{MeterSN}/data`、`summary`、`mdata`；间隔大约 10s；功率字段为 **W**。满 16 槽时 **30 s 内 16 个** `meters/{SN}/data` **都要出现**（固件按槽错开上报，不是同一秒连发 16 包）。长时间稳定性不在本条，走 **TC-SOAK-01** | P0 | |
 | TC-MQTT-06 | 功能 | Retain | 1. 先确认已有一轮 `data` / `summary` / `mdata`<br>2. 新开订阅客户端（不发 `cmd`） | 立刻收到保留的 `data`、`summary`、`mdata`，不必再等 10s 才有名单 | P1 | |
 | TC-MQTT-04 | 功能 | MQTT 远程命令 | 1. 向 `.../cmd` 发 `{"cmd":"get_info"}`<br>2. 看 `cdata` | `ok:true`，`event:get_info`，含 `fw_ver`=`1.1.4`、`ip`。本条不发 `setwifi` | P1 | |
 | TC-HA-01 | 功能 | HA 走 MQTT | 1. HA MQTT 集成与 Dial **同一 Broker**<br>2. HACS 安装 `bo706/BituoPMD` **v1.1.4**（带 v 的版本）并重启 HA<br>3. 已有 Dial 条目则看实体；新环境见 TC-HA-06 | 网关显示在线表数；各 BLE 表实体**可用**（不是「不可用」）；电压/功率约 10s 刷新（开路功率可为 0）；显示名来自 Dial label，不是只显示 12 位 SN | P0 | |
@@ -121,7 +121,7 @@
 | TC-HA-05 | 集成 | 增删表后重载 | 1. Dial 上增加或删除一块表<br>2. HA **重载该 BituoPMD 条目**（或重启 HA） | 新表出现实体；已删表不再作为在线设备更新。不重载则旧实体列表不变，不算固件失败 | P1 | |
 | TC-OTA-01 | 集成 | 正常 OTA（可选） | 1. 仅 HTTP 可达时：LAN web → 配置 → 上传 `bituo-dial.bin`<br>2. 保持供电 ≥30s<br>3. 不要插电脑 USB | 重启后仍可运行、能扫表、MQTT 能绿；失败则留在旧槽 | P2 | |
 | TC-OTA-02 | 异常 | 中断 OTA（可选） | 1. 上传过程中断开浏览器或拔网（尽量不断电） | 仍运行旧固件，不变砖 | P2 | |
-| TC-SOAK-01 | 稳定性 | 连续运行 24h | 1. 连续上电 24h（充电器，不插电脑 USB）<br>2. 看 MQTT/HA 是否持续更新 | 无死机、无反复看门狗复位；MQTT 不应长期一直黄。此前仅短时测过，本条默认未测 | P2 | |
+| TC-SOAK-01 | 稳定性 | 连续运行 24h | 1. 连续上电 24h（充电器，不插电脑 USB）<br>2. 看 MQTT/HA 是否持续更新<br>3. **满 16 槽时长稳走本条**：抽查 Broker 上 16 个 `meters/{SN}/data` 是否仍在刷新 | 无死机、无反复看门狗复位；MQTT 不应长期一直黄（偶发 `(wait)` 后变绿仍算通过，见约定第 7 条）。满 16 槽时 24h 内各表 `data` 应持续出现，不是只在开机 30 s 见过一轮。此前仅短时测过，本条默认未测 | P2 | |
 
 ---
 
