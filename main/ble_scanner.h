@@ -40,9 +40,14 @@ esp_err_t ble_scanner_start(void);
 void ble_scanner_build_nonce(uint32_t counter, uint8_t nonce[12]);
 
 /**
- * @brief 被动扫描是否已启动（Phase3 系统状态页用，只读）
+ * @brief 无线电此刻是否在被动扫描（Wi-Fi 时隙内为 false）
  */
 bool ble_scanner_is_scanning(void);
+
+/**
+ * @brief 系统页用：扫描已启用。Wi-Fi 时隙仍为 true；用户暂停或 MQTT 占无线电为 false。
+ */
+bool ble_scanner_ui_on(void);
 
 #define BLE_NEARBY_MAX  16
 
@@ -58,8 +63,8 @@ void ble_scanner_pause(void);
 void ble_scanner_resume(void);
 
 /**
- * MQTT 未连上或刚连上时拉长 Wi-Fi 时隙（约 2 s 扫描停 / 1.5 s 扫），
- * 让 TCP 重连和 keepalive 过得去。稳定后关掉，回到约 3.5 s / 1.2 s。
+ * 为 true 时缩短扫描、拉长 Wi-Fi 时隙。稳定路径保持 false：
+ * 约 3.5 s 扫描 / 1.5 s Wi-Fi。
  */
 void ble_scanner_set_wifi_boost(bool enable);
 

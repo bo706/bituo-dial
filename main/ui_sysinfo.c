@@ -138,7 +138,7 @@ void ui_sysinfo_refresh(void)
 
     /* ── BLE 扫描 + 在线/总表数 ── */
     lv_label_set_text_fmt(s_ble, "BLE %s  HTTP %s",
-                          ble_scanner_is_scanning() ? "ON" : "OFF",
+                          ble_scanner_ui_on() ? "ON" : "OFF",
                           config_http_enabled() ? "on" : "off");
     lv_label_set_text_fmt(s_meters, "Meters online: %d/%d",
                           meter_store_online_count(), g_meter_count);

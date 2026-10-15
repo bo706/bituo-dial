@@ -34,11 +34,11 @@
 
 static const char *TAG = "ble_scan";
 
-/* ── 扫描参数（单位 0.625ms）。占空比压到 25%，再加周期性 Wi-Fi 时隙。
- * 稳定时约 3.5 s 扫 / 1.2 s Wi-Fi；MQTT 断线时约 1.5 s / 2 s。 */
+/* ── 扫描参数（单位 0.625ms）。窗口约 37%，再留一段完整 Wi-Fi 时隙。
+ * 稳定时约 3.5 s 扫 / 1.5 s Wi-Fi。50% 占空比会把 MQTT 的 TCP 挤掉。 */
 static struct ble_gap_disc_params s_scan_params = {
     .itvl          = 0x80,   /* 扫描间隔 80ms */
-    .window        = 0x20,   /* 扫描窗口 20ms，占空比 25% */
+    .window        = 0x30,   /* 扫描窗口 30ms，占空比 37.5% */
     .filter_policy = BLE_HCI_SCAN_FILT_NO_WL,
     .limited       = 0,
     .passive       = 1,      /* 被动扫描：不发 SCAN_REQ，不连接电表（已用 active
@@ -51,16 +51,16 @@ static bool s_scanning = false;
 static bool s_user_pause;
 static bool s_mqtt_hold;
 static bool s_wifi_slot;
-static volatile bool s_wifi_boost = true;
+static volatile bool s_wifi_boost = false;
 static esp_timer_handle_t s_slot_tmr;
 
 static int ble_scan_callback(struct ble_gap_event *event, void *arg);
 static void scan_apply(void);
 
 #define BLE_SCAN_ON_US         (3500LL * 1000LL)
-#define BLE_WIFI_SLOT_US       (1200LL * 1000LL)
-#define BLE_SCAN_ON_BOOST_US   (1500LL * 1000LL)
-#define BLE_WIFI_SLOT_BOOST_US (2000LL * 1000LL)
+#define BLE_WIFI_SLOT_US       (1500LL * 1000LL)
+#define BLE_SCAN_ON_BOOST_US   (2500LL * 1000LL)
+#define BLE_WIFI_SLOT_BOOST_US (1000LL * 1000LL)
 
 void ble_scanner_set_wifi_boost(bool enable)
 {
@@ -272,8 +272,14 @@ void ble_scanner_build_nonce(uint32_t counter, uint8_t nonce[12])
 
 bool ble_scanner_is_scanning(void)
 {
-    /* Phase3：系统状态页查询 BLE 被动扫描是否在跑（只读 bool，线程安全） */
+    /* 无线电此刻是否在被动扫描。Wi-Fi 时隙里为 false，不代表扫描被关掉。 */
     return s_scanning;
+}
+
+bool ble_scanner_ui_on(void)
+{
+    /* 系统页：Wi-Fi 时隙仍显示 ON。用户暂停或 MQTT 占着无线电才是 OFF。 */
+    return !s_user_pause && !s_mqtt_hold;
 }
 
 /* ======================================================================

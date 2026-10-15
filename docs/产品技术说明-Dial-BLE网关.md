@@ -69,7 +69,7 @@ Bituo 的 SPM / SDM 电表在 BLE 模式下只发 **AES-128-CCM 加密厂商广�
 |---|---|
 | SDK | ESP-IDF v5.2.3 |
 | UI | LVGL v8.3 |
-| BLE | NimBLE 被动扫描：间隔 80 ms / 窗口 20 ms（占空比 **25%**），不发 SCAN_REQ；另以约 3.5 s 扫描 / 0.7 s Wi-Fi 时隙让 MQTT 出得去 |
+| BLE | NimBLE 被动扫描：间隔 80 ms / 窗口 30 ms（占空比 **37.5%**），不发 SCAN_REQ；另以约 3.5 s 扫描 / 1.5 s Wi-Fi 时隙让 MQTT 出得去 |
 | 加密 | AES-128-CCM（mbedTLS），Nonce = `8×0x00 ‖ BE32(counter)`，Tag 4 字节，无 AAD |
 | JSON | cJSON；GATT / HTTP / MQTT 命令共用同一套信封 |
 | 存储 | NVS 保存 Wi-Fi、MQTT、HTTP 开关、最多 16 槽电表配置；量测快照在内存队列（深度 1） |
@@ -82,7 +82,7 @@ Bituo 的 SPM / SDM 电表在 BLE 模式下只发 **AES-128-CCM 加密厂商广�
 | 最大电表数 | 16 |
 | 概览屏可见行 | 最多 8 行窗口，旋钮滚动 |
 | 广播匹配 | 对已配置密钥盲解，不按 MAC |
-| MQTT 上报 | 满 16 表时每块至少隔 **800 ms**，一轮约 13 s。`data` 为 QoS 0 + Retain，`summary` Retain，`mdata` 为 QoS 1 + Retain。keepalive **20 s** |
+| MQTT 上报 | 满 16 表时每块至少隔 **800 ms**，一轮约 13 s。`data` 为 QoS 0 + Retain，`summary` Retain，`mdata` 为 QoS 1 + Retain。keepalive **60 s** |
 | HTTP `/data` | 打开 LAN web 后按需读取；BLE+Wi-Fi 共存时电脑/HA **常常打不开**，不能当日常主路径 |
 | 在线判定 | 距上次有效广播 ≤15 s 白色；15～90 s 黄色；**>90 s 灰色离线并蜂鸣两声** |
 | 掉电恢复 | Wi-Fi / MQTT / 电表列表从 NVS 恢复 |
@@ -200,7 +200,7 @@ ESP32-S3 同时扫 BLE 时，电脑 ping / 打开 `:80` **经常失败**（AP �
 - 前缀：`bituo-dial/{DialSN}/`
 - `tls=1` 为单向 MQTTS（无客户端证书）；未给端口时默认 8883
 - `tls` 实验室可用 `insecure=1`（不校验自签证书）；生产应 `insecure=0`
-- keepalive 20 s。`data` 为 QoS 0 + Retain，`mdata` 为 QoS 1 + Retain，`summary` Retain
+- keepalive 60 s。`data` 为 QoS 0 + Retain，`mdata` 为 QoS 1 + Retain，`summary` Retain
 
 | Topic | 方向 | 说明 |
 |---|---|---|

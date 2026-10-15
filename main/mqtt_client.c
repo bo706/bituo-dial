@@ -39,54 +39,94 @@ static char s_dial_sn[32];
 static esp_timer_handle_t s_coex_tmr;
 
 #define MQTT_UI_GRACE_US           (8LL * 1000000LL)
-#define MQTT_COEX_BALANCE_DELAY_US (60LL * 1000000LL)
-#define MQTT_WATCHDOG_US           (10LL * 1000000LL)
-#define MQTT_MANY_METERS           8
+#define MQTT_SCAN_SETTLE_US        (6LL * 1000000LL)
+#define MQTT_SCAN_HOLD_MAX_US      (12LL * 1000000LL)
+#define MQTT_WATCHDOG_US           (30LL * 1000000LL)
 
 static int64_t s_watchdog_kick_us;
+static int64_t s_scan_resume_at_us;
+static int64_t s_hold_origin_us;
 
-static void mqtt_radio_hungry(void)
+static void mqtt_radio_steady(void)
 {
+    /* 16 表时 BALANCE 仍会让扫描抢走 TCP。稳定后 Wi-Fi 优先，扫描用较短窗口。 */
     esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
-    ble_scanner_set_wifi_boost(true);
-    ble_scanner_set_mqtt_hold(true);
+    ble_scanner_set_wifi_boost(false);
     sys_wifi_refresh_ps();
 }
 
-static void mqtt_coex_balance_cb(void *arg)
-{
-    (void)arg;
-    if (!s_connected) {
-        return;
-    }
-    /* 先恢复扫表。满 8 表以上继续把无线电偏向 Wi-Fi，避免再饿死 TCP。 */
-    ble_scanner_set_mqtt_hold(false);
-    if (g_meter_count >= MQTT_MANY_METERS) {
-        esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
-        ble_scanner_set_wifi_boost(true);
-        ESP_LOGI(TAG, "MQTT stable 60s, keep WIFI prefer meters=%d", g_meter_count);
-    } else {
-        esp_coex_preference_set(ESP_COEX_PREFER_BALANCE);
-        ble_scanner_set_wifi_boost(false);
-        ESP_LOGI(TAG, "MQTT stable 60s, COEX BALANCE");
-    }
-}
+static void mqtt_scan_resume_cb(void *arg);
 
-static void mqtt_radio_hold_wifi(void)
+static void mqtt_arm_scan_resume(int64_t resume_at_us)
 {
-    mqtt_radio_hungry();
+    int64_t now = esp_timer_get_time();
+    s_scan_resume_at_us = resume_at_us;
     if (s_coex_tmr == NULL) {
         const esp_timer_create_args_t targs = {
-            .callback = &mqtt_coex_balance_cb,
+            .callback = &mqtt_scan_resume_cb,
             .name = "mqtt_coex",
         };
         if (esp_timer_create(&targs, &s_coex_tmr) != ESP_OK) {
             ESP_LOGW(TAG, "coex timer create failed");
+            s_scan_resume_at_us = 0;
             return;
         }
     }
     esp_timer_stop(s_coex_tmr);
-    esp_timer_start_once(s_coex_tmr, MQTT_COEX_BALANCE_DELAY_US);
+    int64_t delay = resume_at_us - now;
+    if (delay < 200000LL) {
+        delay = 200000LL;
+    }
+    esp_timer_start_once(s_coex_tmr, delay);
+}
+
+static void mqtt_scan_resume_cb(void *arg)
+{
+    (void)arg;
+    s_scan_resume_at_us = 0;
+    s_hold_origin_us = 0;
+    mqtt_radio_steady();
+    ble_scanner_set_mqtt_hold(false);
+    ESP_LOGI(TAG, "scan resume mqtt=%d", s_connected ? 1 : 0);
+}
+
+/* prefer_later：刚连上时可以把开扫时间推到「现在 + 6s」，但整段暂停不超过 12s。
+ * 断线传 false，重复断线不能把开扫时间再往后推，避免扫描一直停。 */
+static void mqtt_hold_scan(int64_t resume_at, bool prefer_later)
+{
+    int64_t now = esp_timer_get_time();
+    esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+    ble_scanner_set_wifi_boost(false);
+    sys_wifi_refresh_ps();
+    ble_scanner_set_mqtt_hold(true);
+    if (s_hold_origin_us == 0) {
+        s_hold_origin_us = now;
+    }
+    int64_t cap = s_hold_origin_us + MQTT_SCAN_HOLD_MAX_US;
+    if (now >= cap) {
+        if (s_scan_resume_at_us == 0) {
+            mqtt_arm_scan_resume(now + 200000LL);
+        }
+        return;
+    }
+    if (resume_at > cap) {
+        resume_at = cap;
+    }
+    if (resume_at < now + 200000LL) {
+        resume_at = now + 200000LL;
+    }
+    if (resume_at > cap) {
+        resume_at = cap;
+    }
+    if (s_scan_resume_at_us != 0) {
+        if (!prefer_later && resume_at >= s_scan_resume_at_us) {
+            return;
+        }
+        if (prefer_later && resume_at <= s_scan_resume_at_us) {
+            return;
+        }
+    }
+    mqtt_arm_scan_resume(resume_at);
 }
 
 bool mqtt_client_is_connected(void)
@@ -249,7 +289,8 @@ static void mqtt_event_handler(void *args, esp_event_base_t base,
     case MQTT_EVENT_CONNECTED:
         s_connected = true;
         s_disc_us = 0;
-        mqtt_radio_hold_wifi();
+        /* 先让这条 TCP 安静几秒再开扫，避免扫描在握手当下把会话挤掉。 */
+        mqtt_hold_scan(esp_timer_get_time() + MQTT_SCAN_SETTLE_US, true);
         ESP_LOGI(TAG, "MQTT connected, subscribe %s", s_cmd_topic);
         esp_mqtt_client_subscribe(s_client, s_cmd_topic, 1);
         publish_mdata();
@@ -258,11 +299,8 @@ static void mqtt_event_handler(void *args, esp_event_base_t base,
     case MQTT_EVENT_DISCONNECTED:
         s_connected = false;
         s_disc_us = esp_timer_get_time();
-        if (s_coex_tmr != NULL) {
-            esp_timer_stop(s_coex_tmr);
-        }
-        mqtt_radio_hungry();
-        ESP_LOGW(TAG, "MQTT disconnected, prefer Wi-Fi until back");
+        mqtt_hold_scan(s_disc_us + MQTT_SCAN_SETTLE_US, false);
+        ESP_LOGW(TAG, "MQTT disconnected, pause scan");
         break;
     case MQTT_EVENT_DATA:
         if (ev != NULL && ev->data != NULL) {
@@ -311,7 +349,7 @@ esp_err_t mqtt_client_start(void)
     /* GOT_IP 会反复进来。已有客户端禁止拆建（会闪黄）；未连上则踢一脚重连。 */
     if (s_client != NULL) {
         if (!s_connected) {
-            mqtt_radio_hungry();
+            mqtt_hold_scan(esp_timer_get_time() + MQTT_SCAN_SETTLE_US, false);
             esp_err_t rc = esp_mqtt_client_reconnect(s_client);
             ESP_LOGI(TAG, "mqtt kick reconnect rc=%s", esp_err_to_name(rc));
             return rc;
@@ -341,13 +379,13 @@ esp_err_t mqtt_client_start(void)
             ESP_LOGI(TAG, "MQTTS using public CA bundle");
         }
     }
-    cfg.session.keepalive = 20;
+    cfg.session.keepalive = 60;
     cfg.network.reconnect_timeout_ms = 3000;
     cfg.network.timeout_ms = 15000;
     cfg.buffer.size = 2048;
     cfg.outbox.limit = 24576;
 
-    mqtt_radio_hungry();
+    mqtt_hold_scan(esp_timer_get_time() + MQTT_SCAN_SETTLE_US, false);
     s_client = esp_mqtt_client_init(&cfg);
     if (s_client == NULL) {
         ESP_LOGE(TAG, "esp_mqtt_client_init failed");
@@ -364,7 +402,9 @@ esp_err_t mqtt_client_restart(void)
     if (s_coex_tmr != NULL) {
         esp_timer_stop(s_coex_tmr);
     }
-    mqtt_radio_hungry();
+    s_scan_resume_at_us = 0;
+    s_hold_origin_us = 0;
+    mqtt_hold_scan(esp_timer_get_time() + MQTT_SCAN_SETTLE_US, false);
     if (s_client != NULL) {
         s_connected = false;
         s_disc_us = esp_timer_get_time();
@@ -397,11 +437,16 @@ static void north_task_entry(void *arg)
         } else {
             idx = 0;
             int64_t now = esp_timer_get_time();
+            /* 客户端自己会在 3 秒后重连。10 秒一次的强制重连会把刚连上的会话掐断。 */
             if (s_client != NULL && sys_wifi_sta_got_ip() &&
+                s_disc_us != 0 && (now - s_disc_us) >= MQTT_WATCHDOG_US &&
                 (s_watchdog_kick_us == 0 ||
                  (now - s_watchdog_kick_us) >= MQTT_WATCHDOG_US)) {
                 s_watchdog_kick_us = now;
-                mqtt_radio_hungry();
+                if (s_scan_resume_at_us == 0) {
+                    s_hold_origin_us = 0;
+                    mqtt_hold_scan(now + MQTT_SCAN_SETTLE_US, true);
+                }
                 esp_err_t rc = esp_mqtt_client_reconnect(s_client);
                 ESP_LOGW(TAG, "mqtt watchdog reconnect rc=%s", esp_err_to_name(rc));
             }
