@@ -37,7 +37,7 @@
 <tr><th>硬件</th><td>ESP32-S3 rev v0.2，<strong>8MB Flash / 无 PSRAM</strong>；GC9A01 圆屏；USB 口为下、橙色三角为上</td></tr>
 <tr><th>软件</th><td>ESP-IDF 5.2.3，LVGL 8.3，NimBLE 被动扫描 25% 占空比 + Wi-Fi 时隙</td></tr>
 <tr><th>容量</th><td>最多 16 表；概览最多 8 行滚动</td></tr>
-<tr><th>MQTT</th><td>约 10 s；<code>data</code> / <code>summary</code> / <code>mdata</code> Retain；keepalive 30 s</td></tr>
+<tr><th>MQTT</th><td>满 16 表时每块至少隔 800 ms，一轮约 13 s。<code>data</code> 为 QoS 0 + Retain，<code>mdata</code> 为 QoS 1 + Retain。keepalive 20 s</td></tr>
 <tr><th>在线</th><td>≤15 s 白；15～90 s 黄；&gt;90 s 灰 + 蜂鸣两声</td></tr>
 <tr><th>Wi-Fi</th><td>仅 2.4 GHz。保存凭据后 STA-only（GOT_IP 关 SoftAP）。无凭据或掉线约 60 s：热点 <code>BitUo-Dial-XXXXXX</code> / <code>12345678</code> / <code>192.168.4.1</code></td></tr>
 <tr><th>HTTP</th><td>出厂关。打开后 <code>http://&lt;IP&gt;/</code>。BLE 共存时电脑/HA 常访问失败，不能当日常主路径</td></tr>

@@ -26,6 +26,9 @@ esp_err_t sys_softap_start(void);
 /** STA 是否已拿到 IPv4 */
 bool sys_wifi_sta_got_ip(void);
 
+/** 再次关掉 Wi-Fi 省电并拉长 beacon 超时（关联后驱动会改回 min-modem） */
+void sys_wifi_refresh_ps(void);
+
 /** SoftAP 是否已启动 */
 bool sys_wifi_ap_started(void);
 

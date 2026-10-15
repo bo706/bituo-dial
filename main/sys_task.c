@@ -121,6 +121,11 @@ static void wifi_sta_keepalive(void)
     }
 }
 
+void sys_wifi_refresh_ps(void)
+{
+    wifi_sta_keepalive();
+}
+
 static void wifi_stop_softap_for_sta(void)
 {
     s_keep_ap = false;
@@ -237,6 +242,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         }
         sys_mdns_start();
         mqtt_client_start();
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP) {
+        s_sta_got_ip = false;
+        ESP_LOGW(TAG, "STA lost IP");
+        if (g_sys_events != NULL) {
+            xEventGroupClearBits(g_sys_events, SYS_EVENT_WIFI_CONNECTED);
+        }
     }
 }
 
@@ -259,7 +270,7 @@ static esp_err_t wifi_ensure_init(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
                         WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
-                        IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+                        IP_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
 
     const esp_timer_create_args_t targs = {
         .callback = &reconnect_timer_cb,

@@ -2,7 +2,7 @@
 
 固件：`main/mqtt_client.c`。Client ID = Dial SN（如 `DIAL-0180B4`），**Topic 用 DialSN / MeterSN，禁止 MAC。**
 
-Broker 在配置页、圆屏或 `set_mqtt` 写入。`tls=1` 使用 `mqtts://`（单向 TLS，无客户端证书；未给 port 时默认 8883）。`insecure=1`（默认）跳过 Broker 证书校验，用于实验室自签。`insecure=0` 挂 IDF 公开 CA 包（`esp_crt_bundle_attach`）。周期约 10s（`MQTT_SUMMARY_PERIOD_MS`）。无 host 或 STA 无 IP 时不启动。
+Broker 在配置页、圆屏或 `set_mqtt` 写入。`tls=1` 使用 `mqtts://`（单向 TLS，无客户端证书；未给 port 时默认 8883）。`insecure=1`（默认）跳过 Broker 证书校验，用于实验室自签。`insecure=0` 挂 IDF 公开 CA 包（`esp_crt_bundle_attach`）。目标一轮约 10s。满 16 表时每块至少隔 800 ms，所以一轮大约 13 s，不是同一秒连发 16 包。`data` 为 QoS 0 + Retain，`mdata` 仍为 QoS 1 + Retain。keepalive 20 s。无 host 或 STA 无 IP 时不启动。
 
 ## Topic
 
@@ -10,7 +10,7 @@ Broker 在配置页、圆屏或 `set_mqtt` 写入。`tls=1` 使用 `mqtts://`（
 
 | Topic | 方向 | 说明 |
 | --- | --- | --- |
-| `meters/{MeterSN}/data` | 上报 | 单表，约 10s；功率字段为 **W** |
+| `meters/{MeterSN}/data` | 上报 | 单表，按槽错开；功率字段为 **W**；QoS 0，Retain |
 | `summary` | 上报 | 全表汇总 |
 | `mdata` | 上报 | Dial 元数据，**Retain=1** |
 | `cmd` | 订阅 QoS1 | 与 GATT/HTTP 相同 JSON 命令 |

@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 #include "lvgl.h"   /* flush 回调使用 lv_disp_drv_t / lv_area_t / lv_color_t */
+#include "board_m5dial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,16 +26,16 @@ extern "C" {
  * MOSI/SCK 接反时 SPI 时钟与数据错位，面板收不到任何命令，表现为全黑。
  * CS=7 / DC=4 / RST=8 / BL=9 与任务书一致，无需改动。
  */
-#define GC9A01_PIN_MOSI      5
-#define GC9A01_PIN_CLK       6
-#define GC9A01_PIN_CS        7
-#define GC9A01_PIN_DC        4    /* LCD_RS / 数据命令选择 */
-#define GC9A01_PIN_RST       8
-#define GC9A01_PIN_BL        9    /* 背光：高电平点亮，固件不主动开则一直灭 */
+#define GC9A01_PIN_MOSI      BOARD_LCD_MOSI
+#define GC9A01_PIN_CLK       BOARD_LCD_CLK
+#define GC9A01_PIN_CS        BOARD_LCD_CS
+#define GC9A01_PIN_DC        BOARD_LCD_DC
+#define GC9A01_PIN_RST       BOARD_LCD_RST
+#define GC9A01_PIN_BL        BOARD_LCD_BL
 
 #define GC9A01_SPI_HOST      SPI2_HOST
-#define GC9A01_WIDTH         240
-#define GC9A01_HEIGHT        240
+#define GC9A01_WIDTH         BOARD_LCD_W
+#define GC9A01_HEIGHT        BOARD_LCD_H
 #define GC9A01_SPI_FREQ_HZ   (40 * 1000 * 1000)
 
 /* MADCTL bit3 = BGR，本屏必须置 1，去掉会整屏偏色（已真机验证）。 */
@@ -44,7 +45,7 @@ extern "C" {
 /* 2026-09-04：用户握持 USB 口朝下看屏。
  * 2026-09-03 四档自检：idx1 0x48（MX|BGR）文字正、箭头朝三角（USB 对面）。
  * idx3 0xC8 在 USB 朝下时仍颠倒，已证伪。BGR 必须保留。 */
-#define GC9A01_MADCTL_DEFAULT    (GC9A01_MADCTL_MX | GC9A01_MADCTL_BGR)
+#define GC9A01_MADCTL_DEFAULT    BOARD_LCD_MADCTL
 
 /**
  * @brief 初始化 SPI 总线、SPI 设备、控制引脚与 GC9A01 上电序列

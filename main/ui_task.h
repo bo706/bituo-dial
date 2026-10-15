@@ -12,6 +12,7 @@
 
 #include "esp_err.h"
 #include "lvgl.h"
+#include "board_m5dial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,9 @@ extern "C" {
 /* ── 圆屏几何（GC9A01 240×240）──────────────────────────────────────
  * 半径 120：贴边的矩形会被四角裁掉。标题/页脚再往里收，正文左右各留 36px
  * （约等于内接正方形），文字水平居中。 */
-#define UI_SCREEN_SIZE      240
+#define UI_HOR_RES          BOARD_LCD_W
+#define UI_VER_RES          BOARD_LCD_H
+#define UI_SCREEN_SIZE      UI_HOR_RES
 #define UI_MARGIN           36
 #define UI_SAFE_TOP         28
 #define UI_FOOT_Y           196   /* 页脚整行须落在圆内；204 时长句换行会被裁 */

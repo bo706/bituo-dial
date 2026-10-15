@@ -27,6 +27,7 @@ M5Stack Dial（ESP32-S3）固件：被动扫描电表 BLE 加密广播，AES-128
 | [docs/mqtt.md](docs/mqtt.md) | Topic / Payload |
 | [docs/data_dict.md](docs/data_dict.md) | 广播 26B + 明文 15B |
 | [docs/architecture.md](docs/architecture.md) | 系统架构与通讯流程 |
+| [docs/继续开发.md](docs/继续开发.md) | 分层、换 S3 屏改哪、不能改的协议事实 |
 
 不要把电表 `broadcast_key`、PIN、Wi-Fi/MQTT 密码、NVS 转储或真机交接文档提交进本仓库。
 

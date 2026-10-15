@@ -34,7 +34,8 @@
 
 static const char *TAG = "ble_scan";
 
-/* ── 扫描参数（单位 0.625ms）。占空比压到 25%，再加周期性 Wi-Fi 时隙。 */
+/* ── 扫描参数（单位 0.625ms）。占空比压到 25%，再加周期性 Wi-Fi 时隙。
+ * 稳定时约 3.5 s 扫 / 1.2 s Wi-Fi；MQTT 断线时约 1.5 s / 2 s。 */
 static struct ble_gap_disc_params s_scan_params = {
     .itvl          = 0x80,   /* 扫描间隔 80ms */
     .window        = 0x20,   /* 扫描窗口 20ms，占空比 25% */
@@ -48,17 +49,43 @@ static struct ble_gap_disc_params s_scan_params = {
 static uint8_t s_own_addr_type = 0;
 static bool s_scanning = false;
 static bool s_user_pause;
+static bool s_mqtt_hold;
 static bool s_wifi_slot;
+static volatile bool s_wifi_boost = true;
 static esp_timer_handle_t s_slot_tmr;
 
 static int ble_scan_callback(struct ble_gap_event *event, void *arg);
+static void scan_apply(void);
 
-#define BLE_SCAN_ON_US    (3500LL * 1000LL)
-#define BLE_WIFI_SLOT_US  (700LL * 1000LL)
+#define BLE_SCAN_ON_US         (3500LL * 1000LL)
+#define BLE_WIFI_SLOT_US       (1200LL * 1000LL)
+#define BLE_SCAN_ON_BOOST_US   (1500LL * 1000LL)
+#define BLE_WIFI_SLOT_BOOST_US (2000LL * 1000LL)
+
+void ble_scanner_set_wifi_boost(bool enable)
+{
+    s_wifi_boost = enable;
+}
+
+void ble_scanner_set_mqtt_hold(bool hold)
+{
+    s_mqtt_hold = hold;
+    scan_apply();
+}
+
+static int64_t ble_scan_on_us(void)
+{
+    return s_wifi_boost ? BLE_SCAN_ON_BOOST_US : BLE_SCAN_ON_US;
+}
+
+static int64_t ble_wifi_slot_us(void)
+{
+    return s_wifi_boost ? BLE_WIFI_SLOT_BOOST_US : BLE_WIFI_SLOT_US;
+}
 
 static void scan_apply(void)
 {
-    bool want = !s_user_pause && !s_wifi_slot;
+    bool want = !s_user_pause && !s_mqtt_hold && !s_wifi_slot;
     if (want == s_scanning) {
         return;
     }
@@ -86,13 +113,13 @@ static void wifi_slot_timer_cb(void *arg)
         s_wifi_slot = false;
         scan_apply();
         if (s_slot_tmr != NULL) {
-            esp_timer_start_once(s_slot_tmr, BLE_SCAN_ON_US);
+            esp_timer_start_once(s_slot_tmr, ble_scan_on_us());
         }
     } else {
         s_wifi_slot = true;
         scan_apply();
         if (s_slot_tmr != NULL) {
-            esp_timer_start_once(s_slot_tmr, BLE_WIFI_SLOT_US);
+            esp_timer_start_once(s_slot_tmr, ble_wifi_slot_us());
         }
     }
 }
@@ -110,7 +137,7 @@ static void ble_wifi_slot_start(void)
         ESP_LOGW(TAG, "wifi slot timer create failed");
         return;
     }
-    esp_timer_start_once(s_slot_tmr, BLE_SCAN_ON_US);
+    esp_timer_start_once(s_slot_tmr, ble_scan_on_us());
 }
 
 typedef struct {

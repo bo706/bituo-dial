@@ -9,12 +9,13 @@
 
 #include <stdint.h>
 #include "esp_err.h"
+#include "board_m5dial.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define BUZZER_PIN_GPIO         3
+#define BUZZER_PIN_GPIO         BOARD_BUZZER_GPIO
 #define BUZZER_DEFAULT_FREQ_HZ  2700    /* 蜂鸣器谐振频率附近 */
 
 /**

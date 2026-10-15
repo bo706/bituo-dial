@@ -57,6 +57,15 @@ typedef struct {
 void ble_scanner_pause(void);
 void ble_scanner_resume(void);
 
+/**
+ * MQTT 未连上或刚连上时拉长 Wi-Fi 时隙（约 2 s 扫描停 / 1.5 s 扫），
+ * 让 TCP 重连和 keepalive 过得去。稳定后关掉，回到约 3.5 s / 1.2 s。
+ */
+void ble_scanner_set_wifi_boost(bool enable);
+
+/** MQTT 断线时停被动扫描，把无线电让给 TCP；连上后再开。与 pause() 独立。 */
+void ble_scanner_set_mqtt_hold(bool hold);
+
 /** 复制附近 SPM/SDM 广播缓存（约 30s 内见过的） */
 int ble_scanner_nearby_copy(ble_nearby_t *out, int cap);
 

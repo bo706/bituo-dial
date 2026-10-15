@@ -10,14 +10,15 @@
 
 #include <stdbool.h>
 #include "esp_err.h"
+#include "board_m5dial.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define ENCODER_PIN_A       40
-#define ENCODER_PIN_B       41
-#define ENCODER_PIN_BTN     42   /* 侧按键，兼作 WAKE */
+#define ENCODER_PIN_A       BOARD_ENC_A
+#define ENCODER_PIN_B       BOARD_ENC_B
+#define ENCODER_PIN_BTN     BOARD_ENC_BTN
 
 #define ENCODER_DIR_INVERT  0
 

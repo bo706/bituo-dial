@@ -1,6 +1,6 @@
 /**
  * @file    mqtt_client.c
- * @brief   MQTT 北向：单表 data（功率换算为 W）+ summary + mdata(retain)
+ * @brief   MQTT 北向：单表 data（功率 W，QoS0+retain）+ summary + mdata(QoS1 retain)
  *          订阅 cmd、响应 cdata。Topic 用 DialSN/MeterSN，禁止 MAC。
  * @note    广播无 PF，MQTT payload 不带 PowerFactor* 字段。
  * @version ESP-IDF v5.2.3
@@ -23,6 +23,7 @@
 #include "meter_store.h"
 #include "cmd_dispatch.h"
 #include "sys_task.h"
+#include "ble_scanner.h"
 #include "tasks.h"
 
 static const char *TAG = "mqtt";
@@ -35,8 +36,58 @@ static char s_client_id[32];
 static char s_cmd_topic[80];
 static char s_cdata_topic[80];
 static char s_dial_sn[32];
+static esp_timer_handle_t s_coex_tmr;
 
-#define MQTT_UI_GRACE_US  (8LL * 1000000LL)
+#define MQTT_UI_GRACE_US           (8LL * 1000000LL)
+#define MQTT_COEX_BALANCE_DELAY_US (60LL * 1000000LL)
+#define MQTT_WATCHDOG_US           (10LL * 1000000LL)
+#define MQTT_MANY_METERS           8
+
+static int64_t s_watchdog_kick_us;
+
+static void mqtt_radio_hungry(void)
+{
+    esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+    ble_scanner_set_wifi_boost(true);
+    ble_scanner_set_mqtt_hold(true);
+    sys_wifi_refresh_ps();
+}
+
+static void mqtt_coex_balance_cb(void *arg)
+{
+    (void)arg;
+    if (!s_connected) {
+        return;
+    }
+    /* 先恢复扫表。满 8 表以上继续把无线电偏向 Wi-Fi，避免再饿死 TCP。 */
+    ble_scanner_set_mqtt_hold(false);
+    if (g_meter_count >= MQTT_MANY_METERS) {
+        esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+        ble_scanner_set_wifi_boost(true);
+        ESP_LOGI(TAG, "MQTT stable 60s, keep WIFI prefer meters=%d", g_meter_count);
+    } else {
+        esp_coex_preference_set(ESP_COEX_PREFER_BALANCE);
+        ble_scanner_set_wifi_boost(false);
+        ESP_LOGI(TAG, "MQTT stable 60s, COEX BALANCE");
+    }
+}
+
+static void mqtt_radio_hold_wifi(void)
+{
+    mqtt_radio_hungry();
+    if (s_coex_tmr == NULL) {
+        const esp_timer_create_args_t targs = {
+            .callback = &mqtt_coex_balance_cb,
+            .name = "mqtt_coex",
+        };
+        if (esp_timer_create(&targs, &s_coex_tmr) != ESP_OK) {
+            ESP_LOGW(TAG, "coex timer create failed");
+            return;
+        }
+    }
+    esp_timer_stop(s_coex_tmr);
+    esp_timer_start_once(s_coex_tmr, MQTT_COEX_BALANCE_DELAY_US);
+}
 
 bool mqtt_client_is_connected(void)
 {
@@ -110,7 +161,8 @@ static void publish_one_meter(int i)
     char topic[128];
     const char *sn = data.sn[0] ? data.sn : g_meter_configs[i].sn;
     snprintf(topic, sizeof(topic), "bituo-dial/%s/meters/%s/data", s_dial_sn, sn);
-    int rc = esp_mqtt_client_publish(s_client, topic, payload, 0, 1, 1);
+    /* QoS 0：满 16 表时 QoS1 PUBACK 会被 BLE 扫描饿死。Retain 仍留给新订阅。 */
+    int rc = esp_mqtt_client_publish(s_client, topic, payload, 0, 0, 1);
     if (rc < 0) {
         ESP_LOGW(TAG, "publish meter %d failed rc=%d", i, rc);
     }
@@ -197,7 +249,7 @@ static void mqtt_event_handler(void *args, esp_event_base_t base,
     case MQTT_EVENT_CONNECTED:
         s_connected = true;
         s_disc_us = 0;
-        esp_coex_preference_set(ESP_COEX_PREFER_BALANCE);
+        mqtt_radio_hold_wifi();
         ESP_LOGI(TAG, "MQTT connected, subscribe %s", s_cmd_topic);
         esp_mqtt_client_subscribe(s_client, s_cmd_topic, 1);
         publish_mdata();
@@ -206,7 +258,10 @@ static void mqtt_event_handler(void *args, esp_event_base_t base,
     case MQTT_EVENT_DISCONNECTED:
         s_connected = false;
         s_disc_us = esp_timer_get_time();
-        esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+        if (s_coex_tmr != NULL) {
+            esp_timer_stop(s_coex_tmr);
+        }
+        mqtt_radio_hungry();
         ESP_LOGW(TAG, "MQTT disconnected, prefer Wi-Fi until back");
         break;
     case MQTT_EVENT_DATA:
@@ -253,8 +308,14 @@ esp_err_t mqtt_client_start(void)
                  g_mqtt_cfg.host, g_mqtt_cfg.port ? g_mqtt_cfg.port : 1883);
     }
 
-    /* GOT_IP 会反复进来。已有客户端交给 esp-mqtt 自动重连，禁止拆建（会闪黄）。 */
+    /* GOT_IP 会反复进来。已有客户端禁止拆建（会闪黄）；未连上则踢一脚重连。 */
     if (s_client != NULL) {
+        if (!s_connected) {
+            mqtt_radio_hungry();
+            esp_err_t rc = esp_mqtt_client_reconnect(s_client);
+            ESP_LOGI(TAG, "mqtt kick reconnect rc=%s", esp_err_to_name(rc));
+            return rc;
+        }
         ESP_LOGI(TAG, "mqtt already started");
         return ESP_OK;
     }
@@ -280,12 +341,13 @@ esp_err_t mqtt_client_start(void)
             ESP_LOGI(TAG, "MQTTS using public CA bundle");
         }
     }
-    cfg.session.keepalive = 30;
+    cfg.session.keepalive = 20;
     cfg.network.reconnect_timeout_ms = 3000;
     cfg.network.timeout_ms = 15000;
     cfg.buffer.size = 2048;
     cfg.outbox.limit = 24576;
 
+    mqtt_radio_hungry();
     s_client = esp_mqtt_client_init(&cfg);
     if (s_client == NULL) {
         ESP_LOGE(TAG, "esp_mqtt_client_init failed");
@@ -299,6 +361,10 @@ esp_err_t mqtt_client_start(void)
 
 esp_err_t mqtt_client_restart(void)
 {
+    if (s_coex_tmr != NULL) {
+        esp_timer_stop(s_coex_tmr);
+    }
+    mqtt_radio_hungry();
     if (s_client != NULL) {
         s_connected = false;
         s_disc_us = esp_timer_get_time();
@@ -330,6 +396,15 @@ static void north_task_entry(void *arg)
             vTaskDelay(pdMS_TO_TICKS(slot_ms));
         } else {
             idx = 0;
+            int64_t now = esp_timer_get_time();
+            if (s_client != NULL && sys_wifi_sta_got_ip() &&
+                (s_watchdog_kick_us == 0 ||
+                 (now - s_watchdog_kick_us) >= MQTT_WATCHDOG_US)) {
+                s_watchdog_kick_us = now;
+                mqtt_radio_hungry();
+                esp_err_t rc = esp_mqtt_client_reconnect(s_client);
+                ESP_LOGW(TAG, "mqtt watchdog reconnect rc=%s", esp_err_to_name(rc));
+            }
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }

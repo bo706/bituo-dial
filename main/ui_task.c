@@ -262,8 +262,8 @@ esp_err_t lvgl_init(void)
     lv_disp_draw_buf_init(&s_disp_buf, buf1, buf2, pixels);
 
     lv_disp_drv_init(&s_disp_drv);
-    s_disp_drv.hor_res  = UI_SCREEN_SIZE;
-    s_disp_drv.ver_res  = UI_SCREEN_SIZE;
+    s_disp_drv.hor_res  = UI_HOR_RES;
+    s_disp_drv.ver_res  = UI_VER_RES;
     s_disp_drv.flush_cb = gc9a01_flush;       /* 同步 SPI 刷新，内部已 flush_ready */
     s_disp_drv.monitor_cb = disp_monitor_cb;  /* LVGL 8.3：每个 refr 周期回调一次 */
     s_disp_drv.draw_buf = &s_disp_buf;

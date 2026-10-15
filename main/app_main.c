@@ -15,6 +15,7 @@
 #include "esp_event.h"
 #include "esp_wifi_default.h"   /* esp_netif_create_default_wifi_ap/sta */
 
+#include "board_m5dial.h"
 #include "meter_store.h"
 #include "gc9a01.h"
 #include "ui_task.h"        /* lvgl_init() */
@@ -81,16 +82,16 @@ static void phase0_selftest(void)
      * 若读到 0 -> GPIO 读取通路正常、外部无驱动，即编码器触点未接到引脚
      * （FPC 排线松/硬件断）；若仍恒 1 -> 引脚被外部强上拉，同样属硬件异常。 */
     ESP_LOGI(TAG, "[selftest] pull diagnostic: PULL-UP   A=%d B=%d BTN=%d (expect 1/1/1)",
-             gpio_get_level(40), gpio_get_level(41), gpio_get_level(42));
-    gpio_set_pull_mode(GPIO_NUM_40, GPIO_PULLDOWN_ONLY);
-    gpio_set_pull_mode(GPIO_NUM_41, GPIO_PULLDOWN_ONLY);
-    gpio_set_pull_mode(GPIO_NUM_42, GPIO_PULLDOWN_ONLY);
+             gpio_get_level(BOARD_ENC_A), gpio_get_level(BOARD_ENC_B), gpio_get_level(BOARD_ENC_BTN));
+    gpio_set_pull_mode((gpio_num_t)BOARD_ENC_A, GPIO_PULLDOWN_ONLY);
+    gpio_set_pull_mode((gpio_num_t)BOARD_ENC_B, GPIO_PULLDOWN_ONLY);
+    gpio_set_pull_mode((gpio_num_t)BOARD_ENC_BTN, GPIO_PULLDOWN_ONLY);
     vTaskDelay(pdMS_TO_TICKS(50));
     ESP_LOGI(TAG, "[selftest] pull diagnostic: PULL-DOWN A=%d B=%d BTN=%d (0/0/0=read path OK, encoder open)",
-             gpio_get_level(40), gpio_get_level(41), gpio_get_level(42));
-    gpio_set_pull_mode(GPIO_NUM_40, GPIO_PULLUP_ONLY);   /* 恢复内部上拉，进入正常检测 */
-    gpio_set_pull_mode(GPIO_NUM_41, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(GPIO_NUM_42, GPIO_PULLUP_ONLY);
+             gpio_get_level(BOARD_ENC_A), gpio_get_level(BOARD_ENC_B), gpio_get_level(BOARD_ENC_BTN));
+    gpio_set_pull_mode((gpio_num_t)BOARD_ENC_A, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode((gpio_num_t)BOARD_ENC_B, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode((gpio_num_t)BOARD_ENC_BTN, GPIO_PULLUP_ONLY);
     vTaskDelay(pdMS_TO_TICKS(50));
 
     ESP_LOGI(TAG, "[selftest] rotate encoder / press button in next 3s");
@@ -127,14 +128,14 @@ void app_main(void)
      * 时，将 GPIO46 拉低即关机）。
      * ============================================================ */
     gpio_config_t hold_pin_cfg = {
-        .pin_bit_mask = 1ULL << GPIO_NUM_46,
+        .pin_bit_mask = 1ULL << BOARD_PWR_HOLD_GPIO,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&hold_pin_cfg);
-    gpio_set_level(GPIO_NUM_46, 1);   // 锁存电源，全程保持高电平
+    gpio_set_level((gpio_num_t)BOARD_PWR_HOLD_GPIO, 1);
 
     ESP_LOGI(TAG, "Bituo Dial boot: GPIO46 HOLD asserted HIGH, power latched");
 
